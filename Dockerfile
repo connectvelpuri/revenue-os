@@ -24,4 +24,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
 # Run
 ENV PORT=8080
 EXPOSE 8080
-CMD ["uvicorn", "api.webhook:app", "--host", "0.0.0.0", "--port", "8080"]
+# Use shell form so $PORT env var expands
+CMD uvicorn api.webhook:app --host 0.0.0.0 --port ${PORT:-8080}
