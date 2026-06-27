@@ -23,14 +23,17 @@ class LLMClient:
         "complex": {
             "openrouter": "openrouter/free",
             "anthropic": "claude-opus-4-20250514",
+            "nvidia": "minimaxai/minimax-m3",
         },
         "moderate": {
             "openrouter": "openrouter/free",
             "anthropic": "claude-sonnet-4-20250514",
+            "nvidia": "minimaxai/minimax-m3",
         },
         "simple": {
             "openrouter": "openrouter/free",
             "anthropic": "claude-haiku-3-5-20241022",
+            "nvidia": "minimaxai/minimax-m3",
         },
     }
 
@@ -75,16 +78,30 @@ class LLMClient:
             return self._call_openrouter(model, system_prompt, user_prompt, temperature, max_tokens)
         elif self.provider == "anthropic":
             return self._call_anthropic(model, system_prompt, user_prompt, temperature, max_tokens)
+        elif self.provider == "nvidia":
+            return self._call_nvidia(model, system_prompt, user_prompt, temperature, max_tokens)
         return LLMResult(success=False, error=f"Unknown provider: {self.provider}")
 
     def _try_fallback(self, system_prompt: str, user_prompt: str, temperature: float | None, max_tokens: int | None) -> LLMResult:
-        fallback_provider = "anthropic" if self.provider == "openrouter" else "openrouter"
-        model = self.TIER_MODELS.get(self.fallback_tier, {}).get(fallback_provider)
-        if not model:
-            return LLMResult(success=False, error="No fallback model")
-        if fallback_provider == "openrouter":
-            return self._call_openrouter(model, system_prompt, user_prompt, temperature, max_tokens)
-        return self._call_anthropic(model, system_prompt, user_prompt, temperature, max_tokens)
+        # Try OpenRouter first, then Anthropic, then NVIDIA NIM
+        for fb_provider in ["anthropic", "nvidia"]:
+            if fb_provider == self.provider:
+                continue
+            model = self.TIER_MODELS.get(self.fallback_tier, {}).get(fb_provider)
+            if not model:
+                continue
+            if fb_provider == "openrouter":
+                result = self._call_openrouter(model, system_prompt, user_prompt, temperature, max_tokens)
+            elif fb_provider == "anthropic":
+                result = self._call_anthropic(model, system_prompt, user_prompt, temperature, max_tokens)
+            elif fb_provider == "nvidia":
+                result = self._call_nvidia(model, system_prompt, user_prompt, temperature, max_tokens)
+            else:
+                continue
+            if result.success:
+                result.used_fallback = True
+                return result
+        return LLMResult(success=False, error="All providers failed")
 
     def _call_openrouter(self, model: str, system: str, user: str, temperature: float | None, max_tokens: int | None) -> LLMResult:
         try:
@@ -136,6 +153,32 @@ class LLMClient:
             elif "429" in error_msg or "rate" in error_msg.lower():
                 error_msg = "OpenRouter rate limit exceeded. Try again in a few seconds."
             return LLMResult(success=False, error=error_msg)
+
+    def _call_nvidia(self, model, system, user, temperature, max_tokens):
+        """Call NVIDIA NIM API."""
+        try:
+            import openai
+            client = openai.OpenAI(
+                api_key=os.getenv("NVIDIA_NIM_API_KEY"),
+                base_url="https://integrate.api.nvidia.com/v1",
+            )
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                temperature=temperature or self.temperature,
+                max_tokens=max_tokens or self.max_tokens,
+            )
+            text = resp.choices[0].message.content or ""
+            return LLMResult(success=True, text=text, model=model, usage=resp.usage.model_dump() if resp.usage else {})
+        except Exception as e:
+            err_msg = str(e)
+            if "403" in err_msg:
+                err_msg = "NVIDIA NIM authorization failed. Check your API key."
+            return LLMResult(success=False, error=err_msg)
+
 
     def _rule_based_fallback(self, system: str, user: str) -> LLMResult:
         return LLMResult(
