@@ -1,10 +1,19 @@
-"""
-Revenue OS Production API — Auth, Logging, Rate Limiting, Persistence, WhatsApp.
+"""Revenue OS Production API — Auth, Logging, Rate Limiting, Persistence, WhatsApp.
 
 Deploy: railway deploy OR flyctl deploy
 Free tier: Railway ($5 credit), Render (512MB), Fly.io (3 VMs)
 """
+import os
+import sys
 
+# Ensure agents directory is on Python path (handles Railway/Docker paths)
+_agent_paths = [
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "agents"),
+    "/app/agents",
+]
+for _p in _agent_paths:
+    if os.path.isdir(_p) and _p not in sys.path:
+        sys.path.insert(0, _p)
 import os
 import json
 import time
