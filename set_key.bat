@@ -1,1 +1,0 @@
-railway.cmd variable set OPENROUTER_API_KEY=sk-or-...838
